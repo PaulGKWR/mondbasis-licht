@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mondbasis Kontrollzentrum</title>
+<style>
+  :root { --bg:#04060f; --card:rgba(18,26,55,.75); --text:#e8ecf8; --muted:#8a94b8; --accent:#5ee7ff; --line:#2a3458; --ok:#6fe3a1; --bad:#ff7b8a; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:16px; background:radial-gradient(ellipse at top,#0e1530,#04060f 70%) fixed; color:var(--text); font-family:system-ui,Segoe UI,sans-serif; }
+  #stars { position:fixed; inset:0; z-index:-1; width:100%; height:100%; }
+  main { max-width:960px; margin:0 auto; display:grid; gap:16px; }
+  header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+  h1 { font-size:1.4rem; margin:0; letter-spacing:.12em; text-transform:uppercase; text-shadow:0 0 12px var(--accent); }
+  button { background:transparent; color:var(--accent); border:1px solid var(--accent); border-radius:8px; padding:9px 16px; font-size:.95rem; cursor:pointer; font-weight:600; box-shadow:0 0 10px rgba(94,231,255,.3); }
+  button:hover { background:rgba(94,231,255,.15); }
+  #status { color:var(--muted); font-size:.9rem; }
+  .card { background:var(--card); border:1px solid var(--line); backdrop-filter:blur(6px); border-radius:14px; padding:16px; }
+  .scene { padding:0; overflow:hidden; }
+  svg#scene { width:100%; display:block; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; }
+  .label { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.08em; }
+  .big { font-size:2rem; font-weight:700; font-variant-numeric:tabular-nums; }
+  .bar { height:12px; background:var(--line); border-radius:6px; position:relative; margin-top:10px; }
+  .bar > i { position:absolute; inset:0 auto 0 0; background:linear-gradient(90deg,#3a4cff,#5ee7ff,#fff7c2); border-radius:6px; width:0; transition:width .5s; }
+  .bar > b { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--bad); }
+  .bar > b.hell { background:var(--ok); }
+  canvas#chart { width:100%; height:180px; display:block; }
+  #log { font:12px ui-monospace,Consolas,monospace; color:var(--muted); max-height:100px; overflow:auto; white-space:pre-wrap; }
+  @keyframes flicker { 0%,100% { transform:scale(1,1); } 25% { transform:scale(.9,1.12); } 50% { transform:scale(1.08,.92); } 75% { transform:scale(.95,1.08); } }
+  #flame, #flameCore { transform-box:fill-box; transform-origin:50% 0; animation:flicker .12s infinite; }
+  @keyframes shake { 0%,100% { transform:translate(0,0); } 25% { transform:translate(-.8px,.4px); } 75% { transform:translate(.8px,-.4px); } }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<main>
+  <header>
+    <h1>🌙 Mondbasis Kontrollzentrum</h1>
+    <div><button id="demo">Demo</button> <button id="btn">XIAO verbinden</button></div>
+  </header>
+  <div id="status">Nicht verbunden. Chrome oder Edge verwenden, seriellen Monitor in VS Code vorher schließen.</div>
+
+  <div class="card scene">
+    <svg id="scene" viewBox="0 0 900 420" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="sunGlow"><stop offset="0" stop-color="#fff7c2" stop-opacity="1"/><stop offset=".35" stop-color="#ffd866" stop-opacity=".5"/><stop offset="1" stop-color="#ffd866" stop-opacity="0"/></radialGradient>
+        <radialGradient id="earth" cx=".35" cy=".35"><stop offset="0" stop-color="#7fd0ff"/><stop offset=".6" stop-color="#2860c8"/><stop offset="1" stop-color="#0c1e4d"/></radialGradient>
+        <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9a9aa6"/><stop offset="1" stop-color="#3c3c48"/></linearGradient>
+        <linearGradient id="dome" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dfe8f5"/><stop offset="1" stop-color="#7d8ba5"/></linearGradient>
+        <linearGradient id="beam" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff7c2" stop-opacity=".55"/><stop offset="1" stop-color="#fff7c2" stop-opacity="0"/></linearGradient>
+        <linearGradient id="fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" /><stop offset=".25" stop-color="#ffd35a"/><stop offset=".65" stop-color="#ff4a2a"/><stop offset="1" stop-color="#ff1a1a" stop-opacity="0"/></linearGradient>
+        <filter id="blur"><feGaussianBlur stdDeviation="6"/></filter>
+      </defs>
+
+      <!-- Erde -->
+      <circle cx="140" cy="90" r="46" fill="url(#earth)"/>
+      <path d="M115 75q15-14 32-4 6 14-8 22-16 0-24-18zM150 108q12-4 18 8-6 14-18 8z" fill="#4cae6a" opacity=".85"/>
+
+      <!-- Sonne: Helligkeit = LDR -->
+      <g id="sun" opacity="0">
+        <circle cx="790" cy="80" r="130" fill="url(#sunGlow)"/>
+        <circle cx="790" cy="80" r="30" fill="#fff7c2"/>
+      </g>
+
+      <!-- Lichtkegel auf die Basis -->
+      <polygon id="beamShape" points="790,80 560,400 760,400" fill="url(#beam)" opacity="0"/>
+
+      <!-- Mondboden -->
+      <g id="world">
+        <path d="M0 330 Q200 300 450 320 T900 310 V420 H0Z" fill="url(#ground)"/>
+        <ellipse cx="180" cy="372" rx="48" ry="9" fill="#2c2c36"/>
+        <ellipse cx="760" cy="385" rx="36" ry="7" fill="#2c2c36"/>
+        <ellipse cx="520" cy="395" rx="26" ry="5" fill="#2c2c36"/>
+
+        <!-- Mondbasis -->
+        <g id="base">
+          <rect x="300" y="290" width="150" height="38" rx="6" fill="#8791a8"/>
+          <path d="M320 290 A55 55 0 0 1 430 290Z" fill="url(#dome)"/>
+          <rect x="450" y="302" width="70" height="26" rx="6" fill="#9aa5bb"/>
+          <rect x="522" y="312" width="40" height="8" fill="#6b748a"/>
+          <!-- Antenne -->
+          <line x1="375" y1="235" x2="375" y2="205" stroke="#c5cde0" stroke-width="3"/>
+          <circle cx="375" cy="203" r="5" fill="#c5cde0"/>
+          <!-- Fenster: Innenbeleuchtung -->
+          <g id="windows">
+            <rect x="338" y="266" width="18" height="14" rx="4"/>
+            <rect x="366" y="258" width="18" height="14" rx="4"/>
+            <rect x="394" y="266" width="18" height="14" rx="4"/>
+            <rect x="305" y="304" width="22" height="12" rx="3"/>
+            <rect x="465" y="310" width="30" height="10" rx="3"/>
+          </g>
+          <!-- Außenlampe -->
+          <circle id="outerLamp" cx="452" cy="296" r="5" fill="#ff3b3b"/>
+        </g>
+
+        <!-- Rakete -->
+        <g id="rocketGroup">
+          <g id="rocket">
+            <path d="M180 190 q-22 28 -22 70 v40 h44 v-40 q0-42 -22-70z" fill="#f2f4f8"/>
+            <path d="M180 190 q-12 14 -17 34 h34 q-5-20 -17-34z" fill="#e8403a"/>
+            <circle cx="180" cy="252" r="9" fill="#5ac8ff" stroke="#9aa5bb" stroke-width="3"/>
+            <path d="M158 285 l-20 30 h20z M202 285 l20 30 h-20z" fill="#e8403a"/>
+            <rect x="170" y="300" width="20" height="8" fill="#555c70"/>
+            <!-- Feuerstoß: Außen-LED (rot) -->
+            <g id="flameWrap" opacity="0">
+              <ellipse id="flameGlow" cx="180" cy="320" rx="50" ry="40" fill="#ff4a2a" opacity=".5" filter="url(#blur)"/>
+              <path id="flame" d="M168 308 q12 70 12 70 q0 0 12 -70z" fill="url(#fl)"/>
+              <path id="flameCore" d="M174 308 q6 36 6 36 q0 0 6 -36z" fill="#fff"/>
+            </g>
+          </g>
+        </g>
+      </g>
+      <text x="16" y="404" fill="#8a94b8" font-size="13" font-family="system-ui">Sonnenlicht = LDR · Fenster = Innen-LED · Raketenstoß = rote Außen-LED</text>
+    </svg>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">Helligkeit (LDR)</div>
+      <div class="big" id="ldr">–</div>
+      <div class="label" style="text-transform:none">Rohwert <span id="roh">–</span> · 0 dunkel · 4095 hell</div>
+      <div class="bar"><i id="ldrBar"></i><b id="tDunkel"></b><b id="tHell" class="hell"></b></div>
+    </div>
+    <div class="card">
+      <div class="label">Schalter</div>
+      <div class="big" id="sw">–</div>
+      <div class="label">Zustand</div>
+      <div id="zustand" style="font-weight:600">–</div>
+    </div>
+    <div class="card">
+      <div class="label">LEDs</div>
+      <div class="big" id="pct">–</div>
+      <div class="label" id="phase" style="text-transform:none">Triebwerk aus</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Verlauf LDR (letzte 5 Minuten)</div>
+    <canvas id="chart" width="900" height="180"></canvas>
+  </div>
+  <div class="card"><div class="label">Rohdaten</div><div id="log"></div></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const MAX_ADC = 4095, MAX_POINTS = 300;
+const history = [];
+let thresholds = { dunkel: 1200, hell: 1800 };
+
+// ---------- Sternenhimmel ----------
+(function stars() {
+  const c = $('stars'), g = c.getContext('2d');
+  let S = [];
+  function resize() {
+    c.width = innerWidth; c.height = innerHeight;
+    S = Array.from({ length: 220 }, () => ({ x: Math.random() * c.width, y: Math.random() * c.height, r: Math.random() * 1.4 + .2, p: Math.random() * 6.28, s: Math.random() * 2 + .5 }));
+  }
+  function tick(t) {
+    g.clearRect(0, 0, c.width, c.height);
+    for (const s of S) {
+      g.globalAlpha = .4 + .6 * Math.abs(Math.sin(t / 1000 / s.s + s.p));
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(s.x, s.y, s.r, 0, 6.28); g.fill();
+    }
+    requestAnimationFrame(tick);
+  }
+  addEventListener('resize', resize); resize(); requestAnimationFrame(tick);
+})();
+
+// ---------- Anzeige aktualisieren ----------
+function update({ roh, ldr, dk, hl, sw, pct, zustand }) {
+  thresholds = { dunkel: dk, hell: hl };
+  $('ldr').textContent = ldr;
+  $('roh').textContent = roh;
+  $('ldrBar').style.width = (ldr / MAX_ADC * 100) + '%';
+  $('tDunkel').style.left = (dk / MAX_ADC * 100) + '%';
+  $('tHell').style.left = (hl / MAX_ADC * 100) + '%';
+  $('sw').textContent = sw === 'geschlossen' ? 'Geschlossen' : 'Offen';
+  $('zustand').textContent = zustand;
+  $('pct').textContent = pct + ' %';
+
+  const light = ldr / MAX_ADC;   // 0..1 Umgebungshelligkeit
+  const p = pct / 100;           // 0..1 LED-Helligkeit
+
+  // Sonne + Lichtkegel + helle/dunkle Mondlandschaft
+  $('sun').setAttribute('opacity', light.toFixed(2));
+  $('beamShape').setAttribute('opacity', (light * .9).toFixed(2));
+  $('world').style.filter = `brightness(${(.45 + .75 * light).toFixed(2)})`;
+
+  // Fenster der Basis (Innen-LED)
+  $('windows').style.fill = `rgb(${60 + 195 * p},${70 + 160 * p},${100 - 10 * p})`;
+  $('windows').style.filter = `drop-shadow(0 0 ${12 * p}px rgba(255,230,140,${p}))`;
+
+  // Außenlampe + Raketen-Feuerstoß (rote Außen-LED)
+  $('outerLamp').style.filter = `drop-shadow(0 0 ${10 * p}px #ff3b3b)`;
+  $('outerLamp').setAttribute('opacity', (.25 + .75 * p).toFixed(2));
+  $('flameWrap').setAttribute('opacity', p.toFixed(2));
+  const sc = (.25 + .75 * p).toFixed(2);
+  $('flame').style.transform = `scaleY(${sc})`;
+  $('flameCore').style.transform = `scaleY(${sc})`;
+  $('flameGlow').setAttribute('ry', 20 + 35 * p);
+
+  // Rakete hebt ab, wenn die LEDs voll leuchten
+  $('rocket').style.transform = `translateY(${-(p * p) * 28}px)`;
+  $('rocket').style.animation = p > .6 ? 'shake .08s infinite' : 'none';
+  $('phase').textContent = p <= 0 ? 'Triebwerk aus' : p < 1 ? 'Triebwerk zündet …' : 'Volle Schubkraft!';
+
+  history.push({ v: +ldr });
+  if (history.length > MAX_POINTS) history.shift();
+  drawChart();
+}
+
+// Zeile des Mikrocontrollers parsen, z. B.:
+// LDR roh: 2310 | LDR geglaettet: 2305 | Dunkel<1200 Hell>1800 | Schalter: geschlossen | LEDs:  0% | Zustand: AUS (hell)
+const RE = /LDR roh:\s*(\d+)\s*\|\s*LDR geglaettet:\s*(\d+)\s*\|\s*Dunkel<(\d+)\s*Hell>(\d+)\s*\|\s*Schalter:\s*(\w+)\s*\|\s*LEDs:\s*(\d+)%\s*\|\s*Zustand:\s*(.+)/;
+
+function handleLine(line) {
+  const log = $('log');
+  log.textContent = (line + '\n' + log.textContent).slice(0, 3000);
+  const m = RE.exec(line);
+  if (!m) return;
+  update({ roh: +m[1], ldr: +m[2], dk: +m[3], hl: +m[4], sw: m[5], pct: +m[6], zustand: m[7].trim() });
+}
+
+function drawChart() {
+  const c = $('chart'), g = c.getContext('2d');
+  const W = c.width, H = c.height;
+  g.clearRect(0, 0, W, H);
+  const y = v => H - 10 - (v / MAX_ADC) * (H - 20);
+  g.lineWidth = 1;
+  for (const [v, col] of [[thresholds.dunkel, '#ff7b8a'], [thresholds.hell, '#6fe3a1']]) {
+    g.strokeStyle = col; g.setLineDash([6, 4]);
+    g.beginPath(); g.moveTo(0, y(v)); g.lineTo(W, y(v)); g.stroke();
+  }
+  g.setLineDash([]);
+  if (history.length < 2) return;
+  g.strokeStyle = '#5ee7ff'; g.lineWidth = 2; g.beginPath();
+  history.forEach((p, i) => {
+    const x = W - (history.length - 1 - i) * (W / MAX_POINTS);
+    i ? g.lineTo(x, y(p.v)) : g.moveTo(x, y(p.v));
+  });
+  g.stroke();
+}
+
+// ---------- Web Serial ----------
+let port, reader;
+async function connect() {
+  stopDemo();
+  if (!('serial' in navigator)) {
+    $('status').textContent = 'Web Serial wird nicht unterstützt – bitte Chrome oder Edge verwenden.';
+    return;
+  }
+  try {
+    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a }] });
+    await port.open({ baudRate: 115200 });
+  } catch (e) {
+    $('status').textContent = 'Verbindung fehlgeschlagen: ' + e.message + ' (ist der serielle Monitor noch offen?)';
+    return;
+  }
+  $('btn').textContent = 'Trennen';
+  $('status').textContent = 'Verbunden – Daten kommen etwa einmal pro Sekunde.';
+  const decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable).catch(() => {});
+  reader = decoder.readable.getReader();
+  let buf = '';
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf('\n')) >= 0) { handleLine(buf.slice(0, i).trim()); buf = buf.slice(i + 1); }
+    }
+  } catch (e) { $('status').textContent = 'Verbindung unterbrochen: ' + e.message; }
+  await disconnect(true);
+}
+async function disconnect(silent) {
+  try { await reader?.cancel(); } catch {}
+  try { await port?.close(); } catch {}
+  port = reader = null;
+  $('btn').textContent = 'XIAO verbinden';
+  if (!silent) $('status').textContent = 'Getrennt.';
+}
+$('btn').onclick = () => port ? disconnect() : connect();
+
+// ---------- Demo ohne Hardware ----------
+let demoTimer = null, demoT = 0;
+function stopDemo() { clearInterval(demoTimer); demoTimer = null; $('demo').textContent = 'Demo'; }
+$('demo').onclick = () => {
+  if (demoTimer) { stopDemo(); return; }
+  if (port) return;
+  $('demo').textContent = 'Demo stoppen';
+  $('status').textContent = 'Demo-Modus: simulierte Werte.';
+  let led = 0;
+  demoTimer = setInterval(() => {
+    demoT += .05;
+    const ldr = Math.round(2048 + 1900 * Math.sin(demoT));
+    const dark = ldr < 1500;
+    led = Math.max(0, Math.min(1, led + (dark ? .05 : -.05)));
+    update({ roh: ldr, ldr, dk: 1200, hl: 1800, sw: 'geschlossen', pct: Math.round(led * 100), zustand: dark ? 'AN (dunkel)' : 'AUS (hell)' });
+  }, 100);
+};
+drawChart();
+</script>
+</body>
+</html>
